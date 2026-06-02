@@ -1,0 +1,736 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TNT Operations Dashboard</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=Be+Vietnam+Pro:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<style>
+/* ── ROOT TOKENS ────────────────────────────────────────── */
+:root {
+  --bg:        #0b0e14;
+  --surface:   #13171f;
+  --border:    #1e2535;
+  --border2:   #252d3f;
+  --text:      #e2e8f4;
+  --muted:     #5a6680;
+  --accent:    #3b82f6;
+  --accent2:   #6366f1;
+  --ok:        #22c55e;
+  --ok-bg:     rgba(34,197,94,.10);
+  --warn:      #f59e0b;
+  --warn-bg:   rgba(245,158,11,.10);
+  --danger:    #ef4444;
+  --danger-bg: rgba(239,68,68,.10);
+  --mono:      'IBM Plex Mono', monospace;
+  --sans:      'Be Vietnam Pro', sans-serif;
+  --r:         10px;
+}
+
+/* ── RESET ──────────────────────────────────────────────── */
+*,*::before,*::after { box-sizing:border-box; margin:0; padding:0; }
+html { font-size:15px; scroll-behavior:smooth; }
+body { font-family:var(--sans); background:var(--bg); color:var(--text);
+       min-height:100vh; overflow-x:hidden; }
+
+/* ── SCANLINE TEXTURE ───────────────────────────────────── */
+body::before {
+  content:''; position:fixed; inset:0; pointer-events:none; z-index:0;
+  background: repeating-linear-gradient(0deg,
+    transparent, transparent 2px,
+    rgba(0,0,0,.08) 2px, rgba(0,0,0,.08) 4px);
+}
+
+/* ── TOPBAR ─────────────────────────────────────────────── */
+.topbar {
+  position:sticky; top:0; z-index:100;
+  background:rgba(11,14,20,.92); backdrop-filter:blur(16px);
+  border-bottom:1px solid var(--border);
+  display:flex; align-items:center; justify-content:space-between;
+  padding:0 28px; height:58px;
+}
+.logo {
+  display:flex; align-items:center; gap:10px;
+  font-family:var(--mono); font-weight:600; font-size:.88rem; letter-spacing:.04em;
+  color:var(--accent);
+}
+.logo-dot { width:8px; height:8px; border-radius:50%;
+  background:var(--accent); box-shadow:0 0 8px var(--accent); }
+.tagline { font-size:.72rem; color:var(--muted); font-family:var(--mono); margin-top:1px; }
+
+.topbar-right { display:flex; align-items:center; gap:14px; }
+.live-badge {
+  display:flex; align-items:center; gap:6px;
+  font-family:var(--mono); font-size:.7rem; color:var(--ok);
+  border:1px solid rgba(34,197,94,.3); border-radius:20px; padding:3px 10px;
+}
+.live-dot { width:6px; height:6px; border-radius:50%; background:var(--ok);
+  animation:pulse 2s infinite; box-shadow:0 0 6px var(--ok); }
+@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.3} }
+
+/* ── LAYOUT ─────────────────────────────────────────────── */
+.wrap { max-width:1400px; margin:0 auto; padding:28px 24px; position:relative; z-index:1; }
+
+/* ── FILTERS ────────────────────────────────────────────── */
+.filters {
+  display:flex; align-items:center; gap:14px; flex-wrap:wrap;
+  background:var(--surface); border:1px solid var(--border);
+  border-radius:var(--r); padding:16px 20px; margin-bottom:28px;
+}
+.filter-label { font-size:.7rem; color:var(--muted); font-family:var(--mono);
+  text-transform:uppercase; letter-spacing:.08em; margin-right:4px; }
+
+.select-wrap { position:relative; }
+.select-wrap select {
+  appearance:none; background:var(--bg); color:var(--text);
+  border:1px solid var(--border2); border-radius:6px;
+  padding:7px 32px 7px 12px; font-family:var(--sans); font-size:.82rem;
+  cursor:pointer; min-width:160px; outline:none;
+  transition:border-color .2s;
+}
+.select-wrap select:focus { border-color:var(--accent); }
+.select-wrap::after {
+  content:'▾'; position:absolute; right:10px; top:50%; transform:translateY(-50%);
+  color:var(--muted); pointer-events:none; font-size:.7rem;
+}
+
+.period-btns { display:flex; gap:6px; }
+.period-btn {
+  font-family:var(--mono); font-size:.72rem; letter-spacing:.04em;
+  border:1px solid var(--border2); background:transparent; color:var(--muted);
+  border-radius:6px; padding:6px 14px; cursor:pointer; transition:all .2s;
+}
+.period-btn:hover  { border-color:var(--accent); color:var(--accent); }
+.period-btn.active { background:var(--accent); border-color:var(--accent);
+  color:#fff; font-weight:600; }
+
+.refresh-btn {
+  margin-left:auto; display:flex; align-items:center; gap:7px;
+  font-family:var(--mono); font-size:.72rem; letter-spacing:.04em;
+  background:var(--accent); color:#fff; border:none; border-radius:6px;
+  padding:7px 16px; cursor:pointer; transition:all .2s;
+}
+.refresh-btn:hover { background:#2563eb; }
+.refresh-btn svg { transition:transform .4s; }
+.refresh-btn.spinning svg { animation:spin .7s linear infinite; }
+@keyframes spin { to{transform:rotate(360deg)} }
+
+/* ── META BAR ───────────────────────────────────────────── */
+.meta-bar {
+  font-family:var(--mono); font-size:.72rem; color:var(--muted);
+  background:var(--surface); border:1px solid var(--border);
+  border-radius:6px; padding:8px 16px; margin-bottom:24px;
+  display:flex; gap:20px; flex-wrap:wrap;
+}
+.meta-bar span { color:var(--text); }
+
+/* ── SECTION TITLE ──────────────────────────────────────── */
+.section-header {
+  display:flex; align-items:center; gap:10px; margin-bottom:16px; margin-top:32px;
+}
+.section-title {
+  font-family:var(--mono); font-size:.78rem; font-weight:600;
+  text-transform:uppercase; letter-spacing:.1em; color:var(--muted);
+}
+.section-line { flex:1; height:1px; background:var(--border); }
+.section-badge {
+  font-family:var(--mono); font-size:.65rem; padding:2px 8px;
+  border-radius:20px; border:1px solid var(--border2); color:var(--muted);
+}
+
+/* ── KPI GRID ───────────────────────────────────────────── */
+.kpi-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(200px,1fr)); gap:14px; }
+.kpi-card {
+  background:var(--surface); border:1px solid var(--border);
+  border-radius:var(--r); padding:18px 20px;
+  transition:border-color .2s, transform .2s;
+  position:relative; overflow:hidden;
+}
+.kpi-card:hover { transform:translateY(-2px); border-color:var(--border2); }
+.kpi-card::before {
+  content:''; position:absolute; top:0; left:0; right:0; height:3px;
+  background:var(--card-accent, var(--border));
+}
+.kpi-card.ok    { --card-accent:var(--ok);     border-color:rgba(34,197,94,.2); }
+.kpi-card.warn  { --card-accent:var(--warn);   border-color:rgba(245,158,11,.2); background:var(--warn-bg); }
+.kpi-card.danger{ --card-accent:var(--danger); border-color:rgba(239,68,68,.2); background:var(--danger-bg); }
+
+.kpi-label { font-size:.68rem; color:var(--muted); font-family:var(--mono);
+  text-transform:uppercase; letter-spacing:.07em; margin-bottom:8px; }
+.kpi-value { font-family:var(--mono); font-size:1.7rem; font-weight:600;
+  line-height:1; color:var(--text); }
+.kpi-value.big { font-size:2rem; }
+.kpi-sub   { font-size:.72rem; color:var(--muted); margin-top:5px; }
+
+.status-icon { position:absolute; top:14px; right:14px; font-size:.9rem; }
+.kpi-card.ok .status-icon::before     { content:'✓'; color:var(--ok); }
+.kpi-card.warn .status-icon::before   { content:'⚠'; color:var(--warn); }
+.kpi-card.danger .status-icon::before { content:'✕'; color:var(--danger); }
+
+/* ── CHART CARD ─────────────────────────────────────────── */
+.chart-card {
+  background:var(--surface); border:1px solid var(--border);
+  border-radius:var(--r); padding:20px; margin-top:14px;
+}
+.chart-title { font-family:var(--mono); font-size:.72rem; color:var(--muted);
+  text-transform:uppercase; letter-spacing:.07em; margin-bottom:14px; }
+.chart-wrap  { position:relative; height:220px; }
+
+/* ── TABLE ──────────────────────────────────────────────── */
+.data-table {
+  background:var(--surface); border:1px solid var(--border);
+  border-radius:var(--r); overflow:hidden; margin-top:14px;
+}
+.data-table table { width:100%; border-collapse:collapse; }
+.data-table th {
+  font-family:var(--mono); font-size:.66rem; text-transform:uppercase;
+  letter-spacing:.07em; color:var(--muted); text-align:left;
+  padding:10px 14px; border-bottom:1px solid var(--border);
+  background:rgba(0,0,0,.2);
+}
+.data-table td {
+  padding:9px 14px; font-size:.8rem; border-bottom:1px solid rgba(30,37,53,.6);
+}
+.data-table tr:last-child td { border-bottom:none; }
+.data-table tr:hover td { background:rgba(59,130,246,.05); }
+.num { font-family:var(--mono); text-align:right; }
+
+.badge { display:inline-block; font-family:var(--mono); font-size:.65rem;
+  padding:2px 7px; border-radius:4px; font-weight:600; }
+.badge.ok     { background:var(--ok-bg);     color:var(--ok); }
+.badge.warn   { background:var(--warn-bg);   color:var(--warn); }
+.badge.danger { background:var(--danger-bg); color:var(--danger); }
+
+/* ── AGING HEATMAP ──────────────────────────────────────── */
+.aging-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(130px,1fr)); gap:10px; }
+.aging-cell {
+  background:var(--surface); border:1px solid var(--border);
+  border-radius:8px; padding:14px; text-align:center;
+  transition:all .2s;
+}
+.aging-cell:hover { transform:translateY(-2px); }
+.aging-range { font-family:var(--mono); font-size:.68rem; color:var(--muted);
+  margin-bottom:6px; }
+.aging-count { font-family:var(--mono); font-size:1.5rem; font-weight:600; }
+.aging-cell.heat-low    { --c:var(--ok);   }
+.aging-cell.heat-medium { --c:var(--warn); border-color:rgba(245,158,11,.2); }
+.aging-cell.heat-high   { --c:var(--danger); border-color:rgba(239,68,68,.2); background:var(--danger-bg); }
+.aging-count { color:var(--c, var(--text)); }
+
+/* ── TWO COL ────────────────────────────────────────────── */
+.two-col { display:grid; grid-template-columns:1fr 1fr; gap:14px; margin-top:14px; }
+@media(max-width:760px) { .two-col { grid-template-columns:1fr; } }
+
+/* ── LOADING / ERROR ────────────────────────────────────── */
+#loading {
+  position:fixed; inset:0; z-index:999; display:flex; align-items:center;
+  justify-content:center; flex-direction:column; gap:16px;
+  background:var(--bg); font-family:var(--mono);
+}
+.spinner { width:36px; height:36px; border:2px solid var(--border2);
+  border-top-color:var(--accent); border-radius:50%; animation:spin .7s linear infinite; }
+.loading-text { font-size:.8rem; color:var(--muted); }
+.loading-text span { color:var(--accent); }
+
+#error-bar {
+  display:none; background:var(--danger-bg); border:1px solid rgba(239,68,68,.3);
+  border-radius:8px; padding:12px 20px; margin-bottom:20px;
+  font-family:var(--mono); font-size:.78rem; color:var(--danger);
+}
+</style>
+</head>
+<body>
+
+<!-- LOADING -->
+<div id="loading">
+  <div class="spinner"></div>
+  <div class="loading-text">Đang tải dữ liệu từ <span>TNT Spreadsheet</span>…</div>
+</div>
+
+<!-- TOPBAR -->
+<header class="topbar">
+  <div class="logo">
+    <div class="logo-dot"></div>
+    <div>
+      <div>TNT OPS DASHBOARD</div>
+      <div class="tagline">Operations Performance Monitor</div>
+    </div>
+  </div>
+  <div class="topbar-right">
+    <div class="live-badge"><div class="live-dot"></div>LIVE DATA</div>
+    <div id="lastUpdate" style="font-family:var(--mono);font-size:.7rem;color:var(--muted)"></div>
+  </div>
+</header>
+
+<main class="wrap">
+  <div id="error-bar"></div>
+
+  <!-- FILTERS -->
+  <div class="filters">
+    <span class="filter-label">AM:</span>
+    <div class="select-wrap">
+      <select id="amSelect"><option value="">-- Tất cả AM --</option></select>
+    </div>
+    <span class="filter-label" style="margin-left:12px">Kỳ:</span>
+    <div class="period-btns">
+      <button class="period-btn active" data-p="7d">7 Ngày</button>
+      <button class="period-btn" data-p="4w">4 Tuần</button>
+      <button class="period-btn" data-p="month">Tháng này</button>
+    </div>
+    <button class="refresh-btn" id="refreshBtn">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+        <polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/>
+        <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
+      </svg>
+      Cập nhật
+    </button>
+  </div>
+
+  <!-- META -->
+  <div class="meta-bar" id="metaBar">
+    <div>Kỳ: <span id="metaPeriod">—</span></div>
+    <div>Từ: <span id="metaFrom">—</span></div>
+    <div>Đến: <span id="metaTo">—</span></div>
+    <div>AM: <span id="metaAM">Tất cả</span></div>
+  </div>
+
+  <!-- ── FD ── -->
+  <div class="section-header">
+    <div class="section-title">📦 Sản lượng & Hoàn (FD)</div>
+    <div class="section-line"></div>
+    <div class="section-badge">Hoàn càng cao càng kém</div>
+  </div>
+  <div class="kpi-grid" id="fdKPIs"></div>
+  <div class="two-col">
+    <div class="chart-card">
+      <div class="chart-title">Sản lượng theo ngày</div>
+      <div class="chart-wrap"><canvas id="fdVolChart"></canvas></div>
+    </div>
+    <div class="chart-card">
+      <div class="chart-title">Top Bưu cục (Vol vs Hoàn)</div>
+      <div class="chart-wrap"><canvas id="fdBCChart"></canvas></div>
+    </div>
+  </div>
+
+  <!-- ── GTC / LTC / ODR / OPR ── -->
+  <div class="section-header" style="margin-top:40px">
+    <div class="section-title">🎯 Chất lượng Vận hành</div>
+    <div class="section-line"></div>
+    <div class="section-badge">Tỷ lệ càng thấp càng kém</div>
+  </div>
+  <div class="kpi-grid" id="qualityKPIs"></div>
+  <div class="two-col">
+    <div class="chart-card">
+      <div class="chart-title">GTC / LTC / ODR / OPR</div>
+      <div class="chart-wrap"><canvas id="qualityRadar"></canvas></div>
+    </div>
+    <div class="chart-card">
+      <div class="chart-title">GTC theo loại hàng</div>
+      <div class="chart-wrap"><canvas id="gtcLoaiChart"></canvas></div>
+    </div>
+  </div>
+
+  <!-- ── AGING ── -->
+  <div class="section-header" style="margin-top:40px">
+    <div class="section-title">⏱ Aging — Đơn tồn</div>
+    <div class="section-line"></div>
+    <div class="section-badge">Tồn càng nhiều càng kém</div>
+  </div>
+  <div class="kpi-grid" id="agingKPIs"></div>
+  <div style="margin-top:14px">
+    <div class="chart-title" style="font-family:var(--mono);font-size:.72rem;color:var(--muted);text-transform:uppercase;letter-spacing:.07em;margin-bottom:10px">Phân bố số ngày tồn</div>
+    <div class="aging-grid" id="agingHeatmap"></div>
+  </div>
+
+  <!-- ── 48H ── -->
+  <div class="section-header" style="margin-top:40px">
+    <div class="section-title">🕐 Đơn chưa gán &gt;48H</div>
+    <div class="section-line"></div>
+    <div class="section-badge">Càng ít càng tốt</div>
+  </div>
+  <div class="kpi-grid" id="h48KPIs"></div>
+  <div class="two-col">
+    <div class="chart-card">
+      <div class="chart-title">Tỷ lệ chưa gán &gt;48H</div>
+      <div class="chart-wrap"><canvas id="h48Chart"></canvas></div>
+    </div>
+    <div class="data-table" id="h48Table"></div>
+  </div>
+
+  <!-- ── COD ── -->
+  <div class="section-header" style="margin-top:40px">
+    <div class="section-title">💰 Thu hộ COD</div>
+    <div class="section-line"></div>
+    <div class="section-badge">% NVPTT thấp = cần chú ý</div>
+  </div>
+  <div class="kpi-grid" id="codKPIs"></div>
+  <div class="chart-card" style="margin-top:14px">
+    <div class="chart-title">Top Bưu cục theo Tổng tiền COD</div>
+    <div class="chart-wrap"><canvas id="codBCChart"></canvas></div>
+  </div>
+
+  <div style="height:40px"></div>
+</main>
+
+<script>
+// ══════════════════════════════════════════════════════════════
+//  CONFIG — đổi URL sau khi deploy Apps Script
+// ══════════════════════════════════════════════════════════════
+const API_URL = "PASTE_YOUR_APPS_SCRIPT_WEB_APP_URL_HERE";
+
+// ── State ─────────────────────────────────────────────────────
+let currentAM     = "";
+let currentPeriod = "7d";
+let charts        = {};
+
+// ── Helpers ───────────────────────────────────────────────────
+const $ = id => document.getElementById(id);
+const fmtNum  = n  => Number(n||0).toLocaleString("vi-VN");
+const fmtPct  = n  => (Number(n||0)*100).toFixed(1) + "%";
+const fmtMoney= n  => Number(n||0).toLocaleString("vi-VN") + "đ";
+const status  = s  => s || "ok";
+
+function statusClass(s) {
+  return s === "danger" ? "danger" : s === "warn" ? "warn" : "ok";
+}
+function statusLabel(s) {
+  return s === "danger" ? "⚠ Kém" : s === "warn" ? "~ Chú ý" : "✓ Tốt";
+}
+
+// ── KPI Card ──────────────────────────────────────────────────
+function kpiCard(label, value, sub, st) {
+  const cls = statusClass(st);
+  return `<div class="kpi-card ${cls}">
+    <div class="status-icon"></div>
+    <div class="kpi-label">${label}</div>
+    <div class="kpi-value">${value}</div>
+    ${sub ? `<div class="kpi-sub">${sub}</div>` : ""}
+  </div>`;
+}
+
+// ── Destroy chart safely ─────────────────────────────────────
+function destroyChart(id) {
+  if (charts[id]) { charts[id].destroy(); delete charts[id]; }
+}
+
+// ── Shared chart defaults ─────────────────────────────────────
+const C = {
+  ok:     "#22c55e",
+  warn:   "#f59e0b",
+  danger: "#ef4444",
+  accent: "#3b82f6",
+  accent2:"#6366f1",
+  muted:  "#5a6680",
+  text:   "#e2e8f4",
+  grid:   "rgba(30,37,53,.8)"
+};
+
+Chart.defaults.color          = C.muted;
+Chart.defaults.borderColor    = C.grid;
+Chart.defaults.font.family    = "'IBM Plex Mono', monospace";
+Chart.defaults.font.size      = 11;
+Chart.defaults.plugins.legend.display = false;
+
+// ── RENDER FD ─────────────────────────────────────────────────
+function renderFD(fd) {
+  const retPct = fd.returnRate || 0;
+  $("fdKPIs").innerHTML =
+    kpiCard("Tổng sản lượng", fmtNum(fd.totalVol),  "Đơn hàng",                        "ok") +
+    kpiCard("Tổng hoàn",      fmtNum(fd.totalReturn),"Đơn trả",                         fd.status) +
+    kpiCard("Tỷ lệ hoàn",     fmtPct(retPct),        retPct>=.2?"Cần xử lý ngay":"",    fd.status);
+
+  // Chart vol theo ngày
+  destroyChart("fdVol");
+  const days   = Object.keys(fd.byDay||{}).sort((a,b)=>parseDMY(a)-parseDMY(b));
+  const vols   = days.map(d => fd.byDay[d].vol);
+  const rets   = days.map(d => fd.byDay[d].ret);
+  charts["fdVol"] = new Chart($("fdVolChart"), {
+    type:"bar",
+    data:{ labels:days,
+      datasets:[
+        { label:"Vol",    data:vols, backgroundColor:"rgba(59,130,246,.7)", borderRadius:4 },
+        { label:"Hoàn",   data:rets, backgroundColor:"rgba(239,68,68,.7)",  borderRadius:4, yAxisID:"y2" }
+      ]},
+    options:{ responsive:true, maintainAspectRatio:false,
+      scales:{
+        x:{ grid:{color:C.grid}, ticks:{maxRotation:45} },
+        y:{ grid:{color:C.grid}, title:{display:true,text:"Vol"} },
+        y2:{ position:"right", grid:{display:false}, title:{display:true,text:"Hoàn"} }
+      },
+      plugins:{ legend:{display:true, labels:{color:C.text,boxWidth:10} } }
+    }
+  });
+
+  // Chart bưu cục
+  destroyChart("fdBC");
+  const bcKeys  = Object.keys(fd.byBC||{}).sort((a,b)=>(fd.byBC[b].vol)-(fd.byBC[a].vol)).slice(0,10);
+  const bcVols  = bcKeys.map(k=>fd.byBC[k].vol);
+  const bcRets  = bcKeys.map(k=>fd.byBC[k].ret);
+  charts["fdBC"] = new Chart($("fdBCChart"), {
+    type:"bar",
+    data:{ labels:bcKeys,
+      datasets:[
+        { label:"Vol",  data:bcVols, backgroundColor:"rgba(99,102,241,.7)", borderRadius:3 },
+        { label:"Hoàn", data:bcRets, backgroundColor:"rgba(239,68,68,.6)",  borderRadius:3 }
+      ]},
+    options:{ indexAxis:"y", responsive:true, maintainAspectRatio:false,
+      scales:{
+        x:{ grid:{color:C.grid} },
+        y:{ grid:{display:false}, ticks:{font:{size:10}} }
+      },
+      plugins:{ legend:{display:true, labels:{color:C.text,boxWidth:10} } }
+    }
+  });
+}
+
+// ── RENDER QUALITY ───────────────────────────────────────────
+function renderQuality(d) {
+  const { gtc, ltc, odr, opr } = d;
+  $("qualityKPIs").innerHTML =
+    kpiCard("GTC Tổng",   fmtPct(gtc.total.pctGTC),   `Vol: ${fmtNum(gtc.total.vol)}`,  gtc.total.status) +
+    kpiCard("GTC TTS",    fmtPct(gtc.tts.pctGTC),     `Lead: ${gtc.tts.leadtime.toFixed(1)}d`, gtc.tts.status) +
+    kpiCard("Chuyển trả", fmtPct(gtc.total.pctChuyen),"GTC Total",                       gtc.total.pctChuyen>.15?"warn":"ok") +
+    kpiCard("LTC",        fmtPct(ltc.pctLTC),          `Vol: ${fmtNum(ltc.vol)}`,         ltc.status) +
+    kpiCard("Lấy chậm %", fmtPct(ltc.pctLC),          `Lead: ${ltc.leadtime.toFixed(1)}h`, ltc.pctLC>.1?"danger":ltc.pctLC>.05?"warn":"ok") +
+    kpiCard("ODR Ontime", fmtPct(odr.pctOntime),      `GTC: ${fmtNum(odr.gtcTotal)}`,    odr.status) +
+    kpiCard("OPR Ontime", fmtPct(opr.pctOPR),         `Vol: ${fmtNum(opr.volLTC)}`,      opr.status);
+
+  // Radar chart
+  destroyChart("qualityRadar");
+  charts["qualityRadar"] = new Chart($("qualityRadar"), {
+    type:"radar",
+    data:{
+      labels:["GTC Total","GTC TTS","LTC","%Ontime (ODR)","%Ontime (OPR)"],
+      datasets:[{
+        data: [
+          gtc.total.pctGTC*100, gtc.tts.pctGTC*100,
+          ltc.pctLTC*100, odr.pctOntime*100, opr.pctOPR*100
+        ],
+        backgroundColor:"rgba(59,130,246,.15)",
+        borderColor:C.accent, borderWidth:2, pointBackgroundColor:C.accent
+      },{
+        label:"Ngưỡng 90%",
+        data:[90,90,90,90,90],
+        backgroundColor:"rgba(239,68,68,.05)",
+        borderColor:"rgba(239,68,68,.4)", borderDash:[4,4], borderWidth:1,
+        pointBackgroundColor:"transparent"
+      }]
+    },
+    options:{ responsive:true, maintainAspectRatio:false,
+      scales:{ r:{ min:50, max:100, grid:{color:C.grid},
+        pointLabels:{color:C.text,font:{size:10}},
+        ticks:{color:C.muted,backdropColor:"transparent",stepSize:10}
+      }},
+      plugins:{ legend:{display:false} }
+    }
+  });
+
+  // GTC by loại hàng
+  destroyChart("gtcLoai");
+  const loaiKeys = Object.keys(gtc.byLoai||{});
+  const loaiVols = loaiKeys.map(k=>gtc.byLoai[k].vol);
+  charts["gtcLoai"] = new Chart($("gtcLoaiChart"), {
+    type:"doughnut",
+    data:{ labels:loaiKeys,
+      datasets:[{ data:loaiVols,
+        backgroundColor:["#3b82f6","#6366f1","#8b5cf6","#06b6d4","#22c55e","#f59e0b"],
+        borderWidth:2, borderColor:"var(--surface)"
+      }]
+    },
+    options:{ responsive:true, maintainAspectRatio:false,
+      plugins:{ legend:{display:true, position:"right",
+        labels:{color:C.text,boxWidth:10,font:{size:10}}
+      }}
+    }
+  });
+}
+
+// ── RENDER AGING ─────────────────────────────────────────────
+function renderAging(aging) {
+  $("agingKPIs").innerHTML =
+    kpiCard("Tổng đơn tồn",  fmtNum(aging.total),    "Tất cả khoảng",         aging.status) +
+    kpiCard(">15 ngày",       fmtNum(aging.critical),  "Nghiêm trọng",          aging.critical>50?"danger":aging.critical>20?"warn":"ok");
+
+  // Heatmap
+  const ranges = aging.byRange || {};
+  const maxVal = Math.max(...Object.values(ranges).map(Number), 1);
+  const labels = {
+    "(a) 5 - 6 ngày":"5–6n","(b) 6 - 7 ngày":"6–7n","(c) 7 - 8 ngày":"7–8n",
+    "(d) 8 - 9 ngày":"8–9n","(e) 9 - 10 ngày":"9–10n","(f) 10 - 11 ngày":"10–11n",
+    "(g) 11 - 12 ngày":"11–12n","(h) 12 - 13 ngày":"12–13n","(i) 13 - 14 ngày":"13–14n",
+    "(j) 14 - 15 ngày":"14–15n","(k) > 15 ngày":"> 15n"
+  };
+  const idx = Object.keys(labels);
+  const heat = idx.map((k,i) => {
+    const v    = Number(ranges[k]||0);
+    const pct  = v / maxVal;
+    const cls  = i >= 8 ? "heat-high" : i >= 5 ? "heat-medium" : "heat-low";
+    return `<div class="aging-cell ${cls}">
+      <div class="aging-range">${labels[k]}</div>
+      <div class="aging-count">${fmtNum(v)}</div>
+    </div>`;
+  });
+  $("agingHeatmap").innerHTML = heat.join("");
+}
+
+// ── RENDER 48H ───────────────────────────────────────────────
+function render48H(h) {
+  $("h48KPIs").innerHTML =
+    kpiCard("Tổng chưa gán",  fmtNum(h.totalDon), "Đơn",        "ok") +
+    kpiCard("Chưa gán >48H",  fmtNum(h.over48),   "Đơn quá hạn", h.status) +
+    kpiCard("Tỷ lệ >48H",     fmtPct(h.rate),     "",            h.status);
+
+  // Doughnut chart
+  destroyChart("h48");
+  charts["h48"] = new Chart($("h48Chart"), {
+    type:"doughnut",
+    data:{
+      labels:["Đúng hạn","Quá 48H"],
+      datasets:[{ data:[h.totalDon - h.over48, h.over48],
+        backgroundColor:[C.ok, C.danger],
+        borderWidth:3, borderColor:"var(--surface)"
+      }]
+    },
+    options:{ responsive:true, maintainAspectRatio:false,
+      cutout:"72%",
+      plugins:{ legend:{display:true, labels:{color:C.text,boxWidth:10}} }
+    }
+  });
+
+  // Table by loại
+  const loai = h.byLoai || {};
+  const rows = Object.entries(loai).map(([l,v]) => {
+    const r = v.over48/Math.max(v.total,1);
+    const b = r>=.1?"danger":r>=.05?"warn":"ok";
+    return `<tr>
+      <td>${l}</td>
+      <td class="num">${fmtNum(v.total)}</td>
+      <td class="num">${fmtNum(v.over48)}</td>
+      <td class="num"><span class="badge ${b}">${fmtPct(r)}</span></td>
+    </tr>`;
+  });
+  $("h48Table").innerHTML = `<table>
+    <thead><tr><th>Loại đơn</th><th>Tổng</th><th>>48H</th><th>Tỷ lệ</th></tr></thead>
+    <tbody>${rows.join("")||"<tr><td colspan='4' style='color:var(--muted);text-align:center;padding:20px'>Không có dữ liệu</td></tr>"}</tbody>
+  </table>`;
+}
+
+// ── RENDER COD ───────────────────────────────────────────────
+function renderCOD(cod) {
+  $("codKPIs").innerHTML =
+    kpiCard("Tổng phiếu",  fmtNum(cod.totalPhieu),  "Phiếu COD",        "ok") +
+    kpiCard("Tổng tiền",   fmtMoney(cod.totalTien), "",                  "ok") +
+    kpiCard("% NVPTT",     fmtPct(cod.pctNVPTT),    "NV Phụ Trách Thu",  cod.status) +
+    kpiCard("Tự nộp %",    fmtPct(cod.pctTuNop),    "",                  "ok");
+
+  // Chart top BC
+  destroyChart("codBC");
+  const bcKeys = Object.keys(cod.byBC||{}).sort((a,b)=>cod.byBC[b].tien-cod.byBC[a].tien).slice(0,10);
+  const bcTien = bcKeys.map(k=>cod.byBC[k].tien);
+  charts["codBC"] = new Chart($("codBCChart"), {
+    type:"bar",
+    data:{ labels:bcKeys,
+      datasets:[{ data:bcTien,
+        backgroundColor:"rgba(99,102,241,.7)", borderRadius:4
+      }]
+    },
+    options:{ indexAxis:"y", responsive:true, maintainAspectRatio:false,
+      scales:{
+        x:{ grid:{color:C.grid},
+          ticks:{ callback: v => (v/1e6).toFixed(1)+"M" }
+        },
+        y:{ grid:{display:false}, ticks:{font:{size:10}} }
+      }
+    }
+  });
+}
+
+// ── MAIN RENDER ───────────────────────────────────────────────
+function renderAll(data) {
+  if (data.error) { showError("API lỗi: " + data.error); return; }
+
+  // Meta
+  $("metaPeriod").textContent = data.meta?.label || "";
+  $("metaFrom").textContent   = data.meta?.from  || "";
+  $("metaTo").textContent     = data.meta?.to    || "";
+  $("metaAM").textContent     = data.meta?.am    || "Tất cả";
+  $("lastUpdate").textContent = "Cập nhật: " + new Date().toLocaleTimeString("vi-VN");
+
+  renderFD(data.fd);
+  renderQuality(data);
+  renderAging(data.aging);
+  render48H(data.h48);
+  renderCOD(data.cod);
+}
+
+// ── API CALLS ─────────────────────────────────────────────────
+async function fetchAMs() {
+  try {
+    const r = await fetch(`${API_URL}?action=ams`);
+    const d = await r.json();
+    const sel = $("amSelect");
+    (d.ams||[]).forEach(am => {
+      const opt = document.createElement("option");
+      opt.value = am; opt.textContent = am;
+      sel.appendChild(opt);
+    });
+  } catch(e) { console.warn("Không tải được AM list:", e); }
+}
+
+async function fetchData() {
+  setRefreshing(true);
+  hideError();
+  try {
+    const url = `${API_URL}?action=summary&am=${encodeURIComponent(currentAM)}&period=${currentPeriod}`;
+    const r   = await fetch(url);
+    const d   = await r.json();
+    renderAll(d);
+  } catch(e) {
+    showError("Không thể kết nối API. Kiểm tra lại URL trong cấu hình. " + e.message);
+  } finally {
+    setRefreshing(false);
+    $("loading").style.display = "none";
+  }
+}
+
+// ── UI HELPERS ────────────────────────────────────────────────
+function setRefreshing(v) {
+  $("refreshBtn").classList.toggle("spinning", v);
+}
+function showError(msg) {
+  const e = $("error-bar");
+  e.textContent = "⚠ " + msg;
+  e.style.display = "block";
+}
+function hideError() {
+  $("error-bar").style.display = "none";
+}
+function parseDMY(s) {
+  const [d,m,y] = s.split("/");
+  return new Date(y,m-1,d).getTime();
+}
+
+// ── EVENTS ───────────────────────────────────────────────────
+$("amSelect").addEventListener("change", e => {
+  currentAM = e.target.value; fetchData();
+});
+document.querySelectorAll(".period-btn").forEach(btn => {
+  btn.addEventListener("click", () => {
+    document.querySelectorAll(".period-btn").forEach(b=>b.classList.remove("active"));
+    btn.classList.add("active");
+    currentPeriod = btn.dataset.p;
+    fetchData();
+  });
+});
+$("refreshBtn").addEventListener("click", fetchData);
+
+// ── INIT ─────────────────────────────────────────────────────
+(async () => {
+  await fetchAMs();
+  await fetchData();
+})();
+</script>
+</body>
+</html>
