@@ -43,6 +43,8 @@ body::before{content:'';position:fixed;inset:0;z-index:0;pointer-events:none;
 .wrap{max-width:1480px;margin:0 auto;padding:22px 22px 60px;position:relative;z-index:1}
 .ebar{display:none;background:var(--danger-bg);border:1px solid var(--danger-b);border-radius:8px;
   padding:12px 18px;margin-bottom:18px;font-family:var(--mono);font-size:.72rem;color:var(--danger)}
+.wbar{display:none;background:var(--warn-bg);border:1px solid var(--warn-b);border-radius:8px;
+  padding:12px 18px;margin-bottom:18px;font-family:var(--mono);font-size:.72rem;color:var(--warn);line-height:1.5}
 .sec{margin-top:36px}
 .sec:first-child{margin-top:0}
 .sec-head{display:flex;align-items:center;gap:10px;margin-bottom:14px;flex-wrap:wrap}
@@ -112,6 +114,7 @@ body::before{content:'';position:fixed;inset:0;z-index:0;pointer-events:none;
 
 <main class="wrap">
   <div class="ebar" id="eb"></div>
+  <div class="wbar" id="wb"></div>
 
   <!-- MỤC 1: TỔNG QUAN -->
   <section class="sec" id="secOverview">
@@ -190,7 +193,7 @@ function renderOverview(d){
   const d4w=ov.last4Weeks||{};
   TH=d.thresholds||TH;
 
-  $("metaRange").textContent=`10 ngày: ${d.meta?.from10d} → ${d.meta?.to} · 4 tuần: ${d.meta?.from4w} → ${d.meta?.to}`;
+  $("metaRange").textContent=`Dữ liệu đến ${d.meta?.anchorDate||d.meta?.to} · 10 ngày: ${d.meta?.from10d} → ${d.meta?.to} · 4 tuần: ${d.meta?.from4w} → ${d.meta?.to}`;
 
   const r10=s0(d10.rate),r4w=s0(d4w.rate);
   $("ovKpi").innerHTML=
@@ -310,10 +313,26 @@ function renderLoaiSections(d){
   });
 }
 
+function showWarn(m){const w=$("wb");w.innerHTML=m;w.style.display="block"}
+function hideWarn(){$("wb").style.display="none"}
+
 function renderAll(d){
-  if(d.error){showErr("API: "+d.error);return}
-  renderOverview(d);
-  renderLoaiSections(d);
+  if(d.error){showErr("API: "+d.error);hideWarn();return}
+  hideErr();
+  const dbg=d.meta?.debug||{};
+  const vol10=s0((d.overview?.last10Days||{}).vol);
+  const vol4w=s0((d.overview?.last4Weeks||{}).vol);
+  if(vol10===0&&vol4w===0){
+    const loaiKeys=Object.keys(dbg.loaiInSheet||{});
+    const loaiTxt=loaiKeys.length?loaiKeys.join(", "):"(trống)";
+    showWarn("⚠ Không có dòng trong khoảng ngày đã chọn. "
+      +`Tổng ${dbg.totalRows||0} dòng FD · anchor ${d.meta?.anchorDate||"—"} · `
+      +`10d: ${dbg.rowsIn10d||0} dòng · 4w: ${dbg.rowsIn4w||0} dòng.<br>`
+      +"Giá trị cột <b>Loại</b> trên sheet: <b>"+loaiTxt+"</b> "
+      +"(cần: FD_Total, SME, TTS). Sau khi sửa GAS → Deploy <b>New version</b>.");
+  }else hideWarn();
+  try{renderOverview(d)}catch(e){console.error("overview",e);showErr("Lỗi vẽ biểu đồ: "+e.message)}
+  try{renderLoaiSections(d)}catch(e){console.error("loai",e)}
 }
 
 function jsonp(url){
@@ -332,7 +351,7 @@ function jsonp(url){
 async function loadAMs(){
   try{
     const d=await jsonp(API+"?action=ams");
-    (d.ams||[]).forEach(a=>{const o=document.createElement("option");o.value=a;o.textContent=a;$("amSel").appendChild(o)});
+    (d.ams||[]).filter(a=>a&&a!=="#N/A").forEach(a=>{const o=document.createElement("option");o.value=a;o.textContent=a;$("amSel").appendChild(o)});
   }catch(e){console.warn("AMs",e)}
 }
 
