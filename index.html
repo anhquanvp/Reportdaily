@@ -451,19 +451,47 @@ function renderAll(d){
   try{rCOD(d.cod||{})}catch(e){console.error("COD",e)}
 }
 
+// ── JSONP helper (bypass CORS hoàn toàn) ─────────────────
+function jsonp(url){
+  return new Promise((resolve,reject)=>{
+    const cb="cb_"+Date.now()+"_"+Math.random().toString(36).slice(2);
+    let done=false;
+    window[cb]=function(data){
+      done=true; delete window[cb];
+      if(script.parentNode) script.parentNode.removeChild(script);
+      resolve(data);
+    };
+    const script=document.createElement("script");
+    script.src=url+(url.includes("?")?"&":"?")+"callback="+cb;
+    script.onerror=function(){
+      if(!done){done=true;delete window[cb];if(script.parentNode)script.parentNode.removeChild(script);reject(new Error("Script load error"));}
+    };
+    // timeout 30s
+    setTimeout(function(){if(!done){done=true;delete window[cb];if(script.parentNode)script.parentNode.removeChild(script);reject(new Error("Timeout"));}},30000);
+    document.head.appendChild(script);
+  });
+}
+
 // API
 async function loadAMs(){
-  try{const r=await fetch(`${API}?action=ams`),d=await r.json();
-    const sel=$("amSel");(d.ams||[]).forEach(a=>{const o=document.createElement("option");o.value=a;o.textContent=a;sel.appendChild(o)})}catch(e){console.warn(e)}
+  try{
+    const d=await jsonp(API+"?action=ams");
+    const sel=$("amSel");
+    (d.ams||[]).forEach(a=>{const o=document.createElement("option");o.value=a;o.textContent=a;sel.appendChild(o)});
+  }catch(e){console.warn("AM list:",e.message);}
 }
 async function loadData(){
   setSpin(true);hideErr();
   try{
-    const r=await fetch(`${API}?action=summary&am=${encodeURIComponent(CAM)}&period=${CP}`);
-    if(!r.ok)throw new Error("HTTP "+r.status);
-    renderAll(await r.json());
-  }catch(e){showErr("Không thể tải dữ liệu: "+e.message)}
-  finally{setSpin(false);$("ov").style.display="none"}
+    const url=`${API}?action=summary&am=${encodeURIComponent(CAM)}&period=${CP}`;
+    const d=await jsonp(url);
+    renderAll(d);
+  }catch(e){
+    showErr("Không thể tải dữ liệu: "+e.message+" — Kiểm tra Apps Script đã deploy đúng chưa.");
+  }finally{
+    setSpin(false);
+    $("ov").style.display="none";
+  }
 }
 function setSpin(v){$("rfBtn").classList.toggle("spin",v)}
 function showErr(m){const e=$("eb");e.textContent="⚠ "+m;e.style.display="block"}
