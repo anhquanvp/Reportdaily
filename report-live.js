@@ -6,6 +6,8 @@
   'use strict';
 
   const STORAGE_KEY = 'tnt_daily_report_cfg';
+  const AUTH_TOKEN_KEY = 'tnt_auth_token';
+  const AUTH_EMAIL_KEY = 'tnt_auth_email';
   const DEFAULT_CFG = {
     GAS_URL: '',
     TG_BOT_TOKEN: '',
@@ -13,13 +15,26 @@
   };
 
   let liveData = null;
+  let authToken = null;
+  let authEmail = null;
+
+  function getBuiltinConfig() {
+    const w = (typeof window !== 'undefined' && window.TNT_CONFIG) ? window.TNT_CONFIG : {};
+    return {
+      GAS_URL: String(w.GAS_URL || '').trim(),
+      TG_BOT_TOKEN: String(w.TG_BOT_TOKEN || '').trim(),
+      TG_CHAT_ID: String(w.TG_CHAT_ID || '').trim(),
+    };
+  }
 
   function getConfig() {
+    const builtin = getBuiltinConfig();
     try {
       const saved = localStorage.getItem(STORAGE_KEY);
-      return saved ? Object.assign({}, DEFAULT_CFG, JSON.parse(saved)) : Object.assign({}, DEFAULT_CFG);
+      const stored = saved ? JSON.parse(saved) : {};
+      return Object.assign({}, DEFAULT_CFG, builtin, stored);
     } catch (e) {
-      return Object.assign({}, DEFAULT_CFG);
+      return Object.assign({}, DEFAULT_CFG, builtin);
     }
   }
 
@@ -148,12 +163,177 @@
     window.__liveData__ = data;
   }
 
-  async function fetchDashboard(cfg) {
+  function getAuthToken() {
+    return authToken || localStorage.getItem(AUTH_TOKEN_KEY) || '';
+  }
+
+  function showAuthError(msg) {
+    const el = document.getElementById('tnt-auth-err');
+    if (!el) return;
+    el.style.display = 'block';
+    el.innerHTML = msg;
+  }
+
+  function clearAuthError() {
+    const el = document.getElementById('tnt-auth-err');
+    if (el) { el.style.display = 'none'; el.innerHTML = ''; }
+  }
+
+  function lockReport() {
+    document.body.classList.add('tnt-locked');
+    const bar = document.getElementById('tnt-session-bar');
+    if (bar) bar.classList.remove('on');
+  }
+
+  function unlockReport(email) {
+    authEmail = email;
+    document.body.classList.remove('tnt-locked');
+    const bar = document.getElementById('tnt-session-bar');
+    const emailEl = document.getElementById('tnt-user-email');
+    if (bar) bar.classList.add('on');
+    if (emailEl) emailEl.textContent = email;
+    clearAuthError();
+  }
+
+  function saveSession(token, email) {
+    authToken = token;
+    authEmail = email;
+    localStorage.setItem(AUTH_TOKEN_KEY, token);
+    localStorage.setItem(AUTH_EMAIL_KEY, email);
+  }
+
+  function clearSession() {
+    authToken = null;
+    authEmail = null;
+    localStorage.removeItem(AUTH_TOKEN_KEY);
+    localStorage.removeItem(AUTH_EMAIL_KEY);
+  }
+
+  async function verifyToken(cfg, token) {
     const base = cfg.GAS_URL.replace(/\/$/, '');
-    const url = base + (base.indexOf('?') >= 0 ? '&' : '?') + 'action=daily_dashboard&_=' + Date.now();
+    const url = base + (base.indexOf('?') >= 0 ? '&' : '?')
+      + 'action=verify&auth_token=' + encodeURIComponent(token);
     const res = await fetch(url);
     const json = await res.json();
-    if (!json.ok) throw new Error(json.error || 'API trả về lỗi');
+    return json;
+  }
+
+  function saveAuthGasUrl() {
+    const inp = document.getElementById('auth-gas-url');
+    const url = inp ? inp.value.trim() : '';
+    if (!url || url.indexOf('script.google.com') < 0) {
+      showAuthError('Nhập đúng URL Web App (script.google.com/macros/s/.../exec)');
+      return false;
+    }
+    const cfg = getConfig();
+    cfg.GAS_URL = url;
+    setConfig(cfg);
+    const setup = document.getElementById('auth-gas-setup');
+    if (setup) setup.style.display = 'none';
+    clearAuthError();
+    return true;
+  }
+
+  function login() {
+    clearAuthError();
+    const cfg = getConfig();
+    if (!cfg.GAS_URL) {
+      const setup = document.getElementById('auth-gas-setup');
+      if (setup) setup.style.display = 'block';
+      showAuthError('<strong>Chưa có URL API.</strong> Dán GAS Web App URL vào ô bên dưới, bấm <em>Lưu URL</em>, rồi đăng nhập lại.');
+      return;
+    }
+    const btn = document.getElementById('btn-google-login');
+    if (btn) {
+      btn.disabled = true;
+      btn.textContent = 'Đang chuyển tới Google…';
+    }
+    const cb = window.location.href.split('#')[0];
+    const base = cfg.GAS_URL.replace(/\/$/, '');
+    window.location.assign(base + '?action=auth&cb=' + encodeURIComponent(cb));
+  }
+
+  function logout() {
+    clearSession();
+    lockReport();
+    window.location.hash = '';
+    window.location.reload();
+  }
+
+  function parseAuthHash() {
+    const hash = window.location.hash.slice(1);
+    if (!hash) return null;
+    const p = new URLSearchParams(hash);
+    if (p.get('tnt_deny')) {
+      return { deny: p.get('tnt_deny') };
+    }
+    if (p.get('tnt_ok') && p.get('tnt_tok')) {
+      return { ok: p.get('tnt_ok'), token: p.get('tnt_tok') };
+    }
+    return null;
+  }
+
+  async function ensureAuth() {
+    const cfg = getConfig();
+    if (!cfg.GAS_URL) {
+      lockReport();
+      showAuthError('Báo cáo chưa được cấu hình GAS URL. Vui lòng liên hệ quản trị.');
+      return false;
+    }
+
+    const fromHash = parseAuthHash();
+    if (fromHash && fromHash.deny) {
+      history.replaceState(null, '', window.location.pathname + window.location.search);
+      lockReport();
+      if (fromHash.deny === 'no_email') {
+        showAuthError('<strong>Không đọc được email Google.</strong><br>Hãy đăng nhập tài khoản Google trên trình duyệt rồi thử lại.');
+      } else {
+        showAuthError('<strong>Email không có quyền truy cập.</strong><br><em>' + fromHash.deny + '</em> chưa nằm trong <code>allowed-users.json</code> trên GitHub.');
+      }
+      return false;
+    }
+
+    if (fromHash && fromHash.ok && fromHash.token) {
+      history.replaceState(null, '', window.location.pathname + window.location.search);
+      saveSession(fromHash.token, fromHash.ok);
+      unlockReport(fromHash.ok);
+      return true;
+    }
+
+    const saved = localStorage.getItem(AUTH_TOKEN_KEY);
+    const savedEmail = localStorage.getItem(AUTH_EMAIL_KEY);
+    if (saved) {
+      try {
+        const v = await verifyToken(cfg, saved);
+        if (v.ok && v.auth) {
+          saveSession(saved, v.email || savedEmail);
+          unlockReport(v.email || savedEmail);
+          return true;
+        }
+      } catch (e) { /* fall through */ }
+      clearSession();
+    }
+
+    lockReport();
+    return false;
+  }
+
+  async function fetchDashboard(cfg) {
+    const base = cfg.GAS_URL.replace(/\/$/, '');
+    const token = getAuthToken();
+    const url = base + (base.indexOf('?') >= 0 ? '&' : '?')
+      + 'action=daily_dashboard&auth_token=' + encodeURIComponent(token)
+      + '&_=' + Date.now();
+    const res = await fetch(url);
+    const json = await res.json();
+    if (!json.ok) {
+      if (json.auth === false) {
+        clearSession();
+        lockReport();
+        showAuthError(json.error || 'Phiên hết hạn — đăng nhập lại');
+      }
+      throw new Error(json.error || 'API trả về lỗi');
+    }
     return json.data;
   }
 
@@ -244,7 +424,8 @@
     try {
       if (cfg.GAS_URL) {
         const base = cfg.GAS_URL.replace(/\/$/, '');
-        const q = 'action=telegram&text=' + encodeURIComponent(text)
+        const q = 'action=telegram&auth_token=' + encodeURIComponent(getAuthToken())
+          + '&text=' + encodeURIComponent(text)
           + '&token=' + encodeURIComponent(cfg.TG_BOT_TOKEN)
           + '&chat_id=' + encodeURIComponent(cfg.TG_CHAT_ID);
         const res = await fetch(base + '?' + q);
@@ -304,7 +485,43 @@
     if (cfg.GAS_URL) refreshData();
   }
 
-  function init() {
+  function setupAuthUI() {
+    const loginBtn = document.getElementById('btn-google-login');
+    const saveGasBtn = document.getElementById('btn-save-gas-auth');
+    const gasInp = document.getElementById('auth-gas-url');
+    const cfg = getConfig();
+
+    if (gasInp && cfg.GAS_URL) gasInp.value = cfg.GAS_URL;
+
+    if (!cfg.GAS_URL) {
+      const setup = document.getElementById('auth-gas-setup');
+      if (setup) setup.style.display = 'block';
+      showAuthError('<strong>Lần đầu cấu hình:</strong> Dán GAS Web App URL bên dưới → <em>Lưu URL</em> → <em>Đăng nhập Google</em>.');
+    }
+
+    if (loginBtn) loginBtn.addEventListener('click', login);
+    if (saveGasBtn) {
+      saveGasBtn.addEventListener('click', function () {
+        if (saveAuthGasUrl()) toast('Đã lưu URL API — bấm Đăng nhập Google', true);
+      });
+    }
+    if (gasInp) {
+      gasInp.addEventListener('keydown', function (e) {
+        if (e.key === 'Enter') {
+          if (saveAuthGasUrl()) login();
+        }
+      });
+    }
+
+    const logoutBtn = document.querySelector('#tnt-session-bar .btn-logout');
+    if (logoutBtn) logoutBtn.addEventListener('click', logout);
+  }
+
+  async function init() {
+    setupAuthUI();
+    const authed = await ensureAuth();
+    if (!authed) return;
+
     const cfg = getConfig();
     if (cfg.GAS_URL) {
       setTimeout(refreshData, 500);
@@ -323,6 +540,9 @@
     sendTelegram: sendTelegram,
     buildTelegramMessage: buildTelegramMessage,
     getConfig: getConfig,
+    login: login,
+    logout: logout,
+    saveAuthGasUrl: saveAuthGasUrl,
   };
 
   document.addEventListener('DOMContentLoaded', init);
