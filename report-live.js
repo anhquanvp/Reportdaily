@@ -286,7 +286,7 @@
       history.replaceState(null, '', window.location.pathname + window.location.search);
       lockReport();
       if (fromHash.deny === 'no_email') {
-        showAuthError('<strong>Không đọc được email Google.</strong><br>Hãy đăng nhập tài khoản Google trên trình duyệt rồi thử lại.');
+        showAuthError('<strong>Không xác thực được email Google.</strong><br>Admin cần cấu hình <code>GOOGLE_CLIENT_ID</code> trong GAS và deploy <strong>New version</strong>. Sau đó bấm <em>Đăng nhập Google</em> lại.');
       } else {
         showAuthError('<strong>Email không có quyền truy cập.</strong><br><em>' + fromHash.deny + '</em> chưa nằm trong <code>allowed-users.json</code> trên GitHub.');
       }
