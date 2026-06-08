@@ -22,9 +22,57 @@
     const w = (typeof window !== 'undefined' && window.TNT_CONFIG) ? window.TNT_CONFIG : {};
     return {
       GAS_URL: String(w.GAS_URL || '').trim(),
+      GOOGLE_CLIENT_ID: String(w.GOOGLE_CLIENT_ID || '').trim(),
       TG_BOT_TOKEN: String(w.TG_BOT_TOKEN || '').trim(),
       TG_CHAT_ID: String(w.TG_CHAT_ID || '').trim(),
     };
+  }
+
+  function getGoogleClientId() {
+    return getBuiltinConfig().GOOGLE_CLIENT_ID;
+  }
+
+  function handleGoogleCredential(response) {
+    const cfg = getConfig();
+    if (!cfg.GAS_URL) {
+      const setup = document.getElementById('auth-gas-setup');
+      if (setup) setup.style.display = 'block';
+      showAuthError('<strong>Chưa có GAS URL.</strong> Dán Web App URL bên dưới → <em>Lưu URL</em> → đăng nhập lại.');
+      return;
+    }
+    const cb = window.location.href.split('#')[0];
+    const base = cfg.GAS_URL.replace(/\/$/, '');
+    window.location.assign(
+      base + '?action=auth_jwt&cb=' + encodeURIComponent(cb)
+      + '&credential=' + encodeURIComponent(response.credential)
+    );
+  }
+
+  function initGoogleSignIn(container) {
+    const clientId = getGoogleClientId();
+    if (!clientId || !container) return false;
+
+    function tryInit() {
+      if (!window.google || !window.google.accounts || !window.google.accounts.id) {
+        setTimeout(tryInit, 150);
+        return;
+      }
+      window.google.accounts.id.initialize({
+        client_id: clientId,
+        callback: handleGoogleCredential,
+        ux_mode: 'popup',
+        auto_select: false,
+      });
+      window.google.accounts.id.renderButton(container, {
+        type: 'standard',
+        theme: 'outline',
+        size: 'large',
+        text: 'signin_with',
+        width: 320,
+      });
+    }
+    tryInit();
+    return true;
   }
 
   function getConfig() {
@@ -243,14 +291,16 @@
       showAuthError('<strong>Chưa có URL API.</strong> Dán GAS Web App URL vào ô bên dưới, bấm <em>Lưu URL</em>, rồi đăng nhập lại.');
       return;
     }
-    const btn = document.getElementById('btn-google-login');
-    if (btn) {
-      btn.disabled = true;
-      btn.textContent = 'Đang chuyển tới Google…';
+    if (getGoogleClientId() && window.google && window.google.accounts && window.google.accounts.id) {
+      window.google.accounts.id.initialize({
+        client_id: getGoogleClientId(),
+        callback: handleGoogleCredential,
+        ux_mode: 'popup',
+      });
+      window.google.accounts.id.prompt();
+      return;
     }
-    const cb = window.location.href.split('#')[0];
-    const base = cfg.GAS_URL.replace(/\/$/, '');
-    window.location.assign(base + '?action=auth&cb=' + encodeURIComponent(cb));
+    showAuthError('<strong>Thiếu GOOGLE_CLIENT_ID</strong> trong <code>TNT_CONFIG</code> trên trang báo cáo.');
   }
 
   function logout() {
@@ -487,6 +537,7 @@
 
   function setupAuthUI() {
     const loginBtn = document.getElementById('btn-google-login');
+    const gsiWrap = document.getElementById('google-signin-wrap');
     const saveGasBtn = document.getElementById('btn-save-gas-auth');
     const gasInp = document.getElementById('auth-gas-url');
     const cfg = getConfig();
@@ -499,7 +550,12 @@
       showAuthError('<strong>Lần đầu cấu hình:</strong> Dán GAS Web App URL bên dưới → <em>Lưu URL</em> → <em>Đăng nhập Google</em>.');
     }
 
-    if (loginBtn) loginBtn.addEventListener('click', login);
+    if (initGoogleSignIn(gsiWrap)) {
+      if (loginBtn) loginBtn.style.display = 'none';
+    } else if (loginBtn) {
+      if (gsiWrap) gsiWrap.style.display = 'none';
+      loginBtn.addEventListener('click', login);
+    }
     if (saveGasBtn) {
       saveGasBtn.addEventListener('click', function () {
         if (saveAuthGasUrl()) toast('Đã lưu URL API — bấm Đăng nhập Google', true);
