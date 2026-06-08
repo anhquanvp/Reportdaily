@@ -480,7 +480,8 @@
       <input type="url" id="auth-gas-url" placeholder="https://script.google.com/macros/s/.../exec">
       <button type="button" class="auth-btn-secondary" id="btn-save-gas-auth">💾 Lưu URL API</button>
     </div>
-    <button type="button" class="auth-btn" id="btn-google-login">
+    <div id="google-signin-wrap" style="display:flex;justify-content:center;min-height:44px;"></div>
+    <button type="button" class="auth-btn" id="btn-google-login" style="display:none">
       <svg width="20" height="20" viewBox="0 0 48 48"><path fill="#FFC107" d="M43.611 20.083H42V20H24v8h11.303C33.654 32.657 29.183 36 24 36c-5.52 0-10-4.48-10-10s4.48-10 10-10c2.29 0 4.41.78 6.09 2.07l5.66-5.66C34.28 9.56 29.36 7 24 7 12.95 7 4 15.95 4 27s8.95 20 20 20 20-8.95 20-20c0-1.34-.14-2.65-.389-3.917z"/><path fill="#FF3D00" d="m6.306 14.691 6.571 4.819C14.655 15.108 18.961 12 24 12c2.29 0 4.41.78 6.09 2.07l5.66-5.66C34.28 9.56 29.36 7 24 7 16.318 7 9.656 11.337 6.306 14.691z"/><path fill="#4CAF50" d="M24 47c5.166 0 9.86-1.977 13.409-5.192l-6.19-5.238A11.91 11.91 0 0 1 24 36c-5.148 0-9.606-3.307-11.283-7.946l-6.522 5.025C9.505 39.556 16.227 47 24 47z"/><path fill="#1976D2" d="M43.611 20.083H42V20H24v8h11.303a12.04 12.04 0 0 1-4.087 5.571l.003-.002 6.19 5.238C36.971 39.205 44 34 44 24c0-1.34-.14-2.65-.389-3.917z"/></svg>
       Đăng nhập Google
     </button>
@@ -2366,10 +2367,12 @@
   </div>
 </div>
 
-<!-- Cấu hình mặc định (admin điền GAS URL 1 lần khi deploy — user không cần nhập lại) -->
+<!-- Cấu hình mặc định (admin điền 1 lần khi deploy) -->
+<script src="https://accounts.google.com/gsi/client" async defer></script>
 <script>
 window.TNT_CONFIG = window.TNT_CONFIG || {
-  GAS_URL: 'https://script.google.com/macros/s/AKfycbzz_HkCKvTW6KRuIe2TrYoZBs7k1e1Fm7j296tSfSNly8XavV92NwJDEJzoBF0hiP1eTA/exec'  // vd: 'https://script.google.com/macros/s/XXXX/exec'
+  GAS_URL: '',  // vd: 'https://script.google.com/macros/s/XXXX/exec'
+  GOOGLE_CLIENT_ID: '96848780552-cg9msgiqmtuan9ri9ov5ftvf2jp2om3m.apps.googleusercontent.com'
 };
 </script>
 <script src="report-live.js"></script>
