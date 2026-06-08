@@ -90,6 +90,48 @@
     localStorage.setItem(STORAGE_KEY, JSON.stringify(cfg));
   }
 
+  /** Gọi GAS Web App từ GitHub Pages — dùng JSONP (fetch bị CORS chặn). */
+  function gasApi(cfg, params, timeoutMs) {
+    return new Promise(function (resolve, reject) {
+      const base = String(cfg.GAS_URL || '').replace(/\/$/, '');
+      if (!base) {
+        reject(new Error('Chưa cấu hình GAS URL'));
+        return;
+      }
+
+      const cbName = 'tntGasCb_' + Date.now() + '_' + Math.floor(Math.random() * 1e6);
+      const qs = Object.keys(params).map(function (k) {
+        return encodeURIComponent(k) + '=' + encodeURIComponent(String(params[k]));
+      }).join('&');
+      const url = base + (base.indexOf('?') >= 0 ? '&' : '?') + qs + '&callback=' + cbName;
+      let script = null;
+
+      const timer = setTimeout(function () {
+        cleanup();
+        reject(new Error('API timeout — sheet lớn hoặc GAS chậm, thử lại'));
+      }, timeoutMs || 120000);
+
+      function cleanup() {
+        clearTimeout(timer);
+        try { delete window[cbName]; } catch (e) { window[cbName] = undefined; }
+        if (script && script.parentNode) script.parentNode.removeChild(script);
+      }
+
+      window[cbName] = function (data) {
+        cleanup();
+        resolve(data);
+      };
+
+      script = document.createElement('script');
+      script.src = url;
+      script.onerror = function () {
+        cleanup();
+        reject(new Error('Failed to fetch — kiểm tra GAS URL và deploy Web App'));
+      };
+      document.head.appendChild(script);
+    });
+  }
+
   function fmtNum(n) {
     if (n === null || n === undefined || isNaN(n)) return '—';
     return Math.round(n).toLocaleString('vi-VN');
@@ -258,12 +300,7 @@
   }
 
   async function verifyToken(cfg, token) {
-    const base = cfg.GAS_URL.replace(/\/$/, '');
-    const url = base + (base.indexOf('?') >= 0 ? '&' : '?')
-      + 'action=verify&auth_token=' + encodeURIComponent(token);
-    const res = await fetch(url);
-    const json = await res.json();
-    return json;
+    return gasApi(cfg, { action: 'verify', auth_token: token });
   }
 
   function saveAuthGasUrl() {
@@ -369,13 +406,11 @@
   }
 
   async function fetchDashboard(cfg) {
-    const base = cfg.GAS_URL.replace(/\/$/, '');
-    const token = getAuthToken();
-    const url = base + (base.indexOf('?') >= 0 ? '&' : '?')
-      + 'action=daily_dashboard&auth_token=' + encodeURIComponent(token)
-      + '&_=' + Date.now();
-    const res = await fetch(url);
-    const json = await res.json();
+    const json = await gasApi(cfg, {
+      action: 'daily_dashboard',
+      auth_token: getAuthToken(),
+      _: Date.now(),
+    });
     if (!json.ok) {
       if (json.auth === false) {
         clearSession();
@@ -473,13 +508,13 @@
 
     try {
       if (cfg.GAS_URL) {
-        const base = cfg.GAS_URL.replace(/\/$/, '');
-        const q = 'action=telegram&auth_token=' + encodeURIComponent(getAuthToken())
-          + '&text=' + encodeURIComponent(text)
-          + '&token=' + encodeURIComponent(cfg.TG_BOT_TOKEN)
-          + '&chat_id=' + encodeURIComponent(cfg.TG_CHAT_ID);
-        const res = await fetch(base + '?' + q);
-        const json = await res.json();
+        const json = await gasApi(cfg, {
+          action: 'telegram',
+          auth_token: getAuthToken(),
+          text: text,
+          token: cfg.TG_BOT_TOKEN,
+          chat_id: cfg.TG_CHAT_ID,
+        });
         if (json.ok || json.success) {
           toast('✅ Đã gửi Telegram thành công', true);
           closeTelegramModal();
