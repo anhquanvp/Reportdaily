@@ -33,6 +33,9 @@
   }
 
   function handleGoogleCredential(response) {
+    clearAuthError();
+    clearSession();
+    history.replaceState(null, '', window.location.pathname + window.location.search);
     const cfg = getConfig();
     if (!cfg.GAS_URL) {
       const setup = document.getElementById('auth-gas-setup');
@@ -371,6 +374,7 @@
     const fromHash = parseAuthHash();
     if (fromHash && fromHash.deny) {
       history.replaceState(null, '', window.location.pathname + window.location.search);
+      clearSession();
       lockReport();
       if (fromHash.deny === 'no_email') {
         showAuthError('<strong>Không xác thực được email Google.</strong><br>Admin cần cấu hình <code>GOOGLE_CLIENT_ID</code> trong GAS và deploy <strong>New version</strong>. Sau đó bấm <em>Đăng nhập Google</em> lại.');
