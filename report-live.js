@@ -45,10 +45,24 @@
     }
     const cb = window.location.href.split('#')[0];
     const base = cfg.GAS_URL.replace(/\/$/, '');
-    window.location.assign(
-      base + '?action=auth_jwt&cb=' + encodeURIComponent(cb)
-      + '&credential=' + encodeURIComponent(response.credential)
-    );
+    // POST form — JWT dài, không gửi qua URL GET (dễ bị cắt/lỗi)
+    const form = document.createElement('form');
+    form.method = 'POST';
+    form.action = base;
+    form.style.display = 'none';
+    [
+      ['action', 'auth_jwt'],
+      ['cb', cb],
+      ['credential', response.credential],
+    ].forEach(function (pair) {
+      const inp = document.createElement('input');
+      inp.type = 'hidden';
+      inp.name = pair[0];
+      inp.value = pair[1];
+      form.appendChild(inp);
+    });
+    document.body.appendChild(form);
+    form.submit();
   }
 
   function initGoogleSignIn(container) {
@@ -233,6 +247,120 @@
     }).join('');
   }
 
+  function pillHtml(pct, target, higherIsBetter) {
+    if (pct === null || pct === undefined || isNaN(pct)) return '—';
+    const gap = higherIsBetter ? target - pct : pct - target;
+    let cls = 'pill-good';
+    if (gap > 5) cls = 'pill-bad';
+    else if (gap > 0) cls = 'pill-warn';
+    return '<span class="pill ' + cls + '">' + fmtPct(pct) + '</span>';
+  }
+
+  function getChartInstance(id) {
+    const el = document.getElementById(id);
+    if (!el || typeof Chart === 'undefined') return null;
+    if (Chart.getChart) return Chart.getChart(el);
+    return (window.__tntCharts__ && window.__tntCharts__[id]) || null;
+  }
+
+  function updateChart(id, cfg) {
+    const el = document.getElementById(id);
+    if (!el || typeof Chart === 'undefined') return;
+    const isBar = cfg.type === 'bar';
+    const existing = getChartInstance(id);
+    if (existing) {
+      existing.data.labels = cfg.labels;
+      existing.data.datasets = cfg.datasets;
+      existing.update();
+      return;
+    }
+    const chart = new Chart(el, {
+      type: cfg.type || 'line',
+      data: { labels: cfg.labels, datasets: cfg.datasets },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: { legend: { position: 'bottom', display: !isBar } },
+        scales: { y: { beginAtZero: isBar, title: { display: true, text: cfg.y_label || '' } } },
+      },
+    });
+    window.__tntCharts__ = window.__tntCharts__ || {};
+    window.__tntCharts__[id] = chart;
+  }
+
+  function updateMetricOpr(data) {
+    const sec = document.getElementById('metric-opr');
+    if (!sec || !data.kpis) return;
+    const k = data.kpis.opr;
+    const m = data.metrics && data.metrics.opr;
+    const target = k.target || 95;
+
+    const big = sec.querySelector('.big-card');
+    if (big) {
+      const valEl = big.querySelector('.big-value');
+      const subEl = big.querySelector('.big-sub');
+      const tgtEl = big.querySelector('.big-target');
+      if (valEl) valEl.textContent = (k.value !== null && k.value !== undefined) ? fmtPct(k.value) : '—';
+      if (subEl) subEl.textContent = 'OPR TTS — Lấy đúng hạn · ngày ' + (data.anchorDate || '');
+      if (tgtEl) {
+        const gap = (k.value !== null && k.value !== undefined) ? (target - k.value) : null;
+        if (gap !== null && gap <= 0) {
+          tgtEl.textContent = '▲ Đạt mục tiêu ' + target + '%';
+          tgtEl.className = 'big-target good';
+        } else if (gap !== null) {
+          tgtEl.textContent = '▼ ' + gap.toFixed(1) + ' điểm so với mục tiêu ' + target + '%';
+          tgtEl.className = 'big-target ' + (gap <= 5 ? 'warn' : 'bad');
+        } else {
+          tgtEl.textContent = 'Mục tiêu ' + target + '%';
+          tgtEl.className = 'big-target';
+        }
+      }
+      big.className = 'big-card big-' + (k.status || 'neutral');
+    }
+
+    if (m && m.provinces) {
+      const tbody = document.getElementById('opr-prov-tbody') || sec.querySelector('.metric-grid table tbody');
+      if (tbody) {
+        tbody.innerHTML = m.provinces.map(function (p) {
+          return '<tr><td class="province-name">' + p.name + '</td>'
+            + '<td class="num">' + fmtNum(p.vol) + '</td>'
+            + '<td class="num">' + pillHtml(p.opr, target, true) + '</td></tr>';
+        }).join('');
+      }
+    }
+
+    if (m && m.trend7d && m.trend7d.length) {
+      const labels = m.trend7d.map(function (d) { return d.label; });
+      const values = m.trend7d.map(function (d) { return d.value; });
+      updateChart('chart_opr', {
+        labels: labels,
+        datasets: [
+          {
+            label: 'OPR TTS — Lấy đúng hạn',
+            data: values,
+            borderColor: '#FF6C0A',
+            backgroundColor: 'rgba(255,108,10,0.1)',
+            borderWidth: 3,
+            fill: true,
+            tension: 0.3,
+            pointRadius: 5,
+            pointBackgroundColor: '#FF6C0A',
+          },
+          {
+            label: 'Mục tiêu ' + target + '%',
+            data: values.map(function () { return target; }),
+            borderColor: '#94A3B8',
+            borderDash: [5, 5],
+            borderWidth: 2,
+            pointRadius: 0,
+            fill: false,
+          },
+        ],
+        y_label: '%',
+      });
+    }
+  }
+
   function applyDashboard(data) {
     liveData = data;
 
@@ -252,6 +380,7 @@
 
     updateProvinces(data.provinces);
     updateAlerts(data.alerts);
+    updateMetricOpr(data);
 
     window.__liveData__ = data;
   }
