@@ -331,6 +331,255 @@
     window.__tntCharts__[id] = chart;
   }
 
+  function rotPillHtml(count) {
+    if (count === null || count === undefined || isNaN(count)) return '—';
+    let cls = 'pill-good';
+    if (count >= 2000) cls = 'pill-bad';
+    else if (count >= 500) cls = 'pill-warn';
+    return '<span class="pill ' + cls + '">' + fmtNum(count) + '</span>';
+  }
+
+  function metricAnchor_(data, m) {
+    return (m && m.anchorDay) ? m.anchorDay : (data.anchorDate || '');
+  }
+
+  function updateMetricPctTab(opts) {
+    const sec = document.getElementById(opts.sectionId);
+    if (!sec || !opts.kpi) return;
+    const k = opts.kpi;
+    const m = opts.metrics;
+    const target = k.target || opts.defaultTarget || 0;
+    const higher = opts.higherIsBetter !== false;
+    const day = metricAnchor_(opts.data, m);
+
+    const big = sec.querySelector('.big-card');
+    if (big) {
+      const valEl = big.querySelector('.big-value');
+      const subEl = big.querySelector('.big-sub');
+      const tgtEl = big.querySelector('.big-target');
+      if (valEl) valEl.textContent = (k.value !== null && k.value !== undefined) ? fmtPct(k.value) : '—';
+      if (subEl) subEl.textContent = opts.subtitle + day;
+      if (tgtEl) {
+        const gap = (k.value !== null && k.value !== undefined) ? (higher ? target - k.value : k.value - target) : null;
+        if (gap !== null && gap <= 0) {
+          tgtEl.textContent = '▲ Đạt mục tiêu ' + target + '%';
+          tgtEl.className = 'big-target good';
+        } else if (gap !== null) {
+          tgtEl.textContent = '▼ ' + Math.abs(gap).toFixed(1) + ' điểm so với mục tiêu ' + target + '%';
+          tgtEl.className = 'big-target ' + (gap <= 5 ? 'warn' : 'bad');
+        } else {
+          tgtEl.textContent = 'Mục tiêu ' + target + '%';
+          tgtEl.className = 'big-target';
+        }
+      }
+      big.className = 'big-card big-' + (k.status || 'neutral');
+    }
+
+    if (m && m.provinces && opts.tbodyId) {
+      const tbody = document.getElementById(opts.tbodyId);
+      if (tbody) {
+        tbody.innerHTML = m.provinces.map(function (p) {
+          const val = p[opts.valueField];
+          return '<tr><td class="province-name">' + p.name + '</td>'
+            + '<td class="num">' + fmtNum(p.vol) + '</td>'
+            + '<td class="num">' + pillHtml(val, target, higher) + '</td></tr>';
+        }).join('');
+      }
+    }
+
+    if (m && m.trend7d && m.trend7d.length && opts.chartId) {
+      updateChart(opts.chartId, {
+        labels: m.trend7d.map(function (d) { return d.label; }),
+        datasets: [
+          {
+            label: opts.chartLabel,
+            data: m.trend7d.map(function (d) { return d.value; }),
+            borderColor: opts.chartColor || '#FF6C0A',
+            backgroundColor: opts.chartFill || 'rgba(255,108,10,0.1)',
+            borderWidth: 3,
+            fill: true,
+            tension: 0.3,
+            pointRadius: 5,
+            pointBackgroundColor: opts.chartColor || '#FF6C0A',
+          },
+          {
+            label: 'Mục tiêu ' + target + '%',
+            data: m.trend7d.map(function () { return target; }),
+            borderColor: '#94A3B8',
+            borderDash: [5, 5],
+            borderWidth: 2,
+            pointRadius: 0,
+            fill: false,
+          },
+        ],
+        y_label: '%',
+      });
+    }
+  }
+
+  function updateMetricGanGiao(data) {
+    updateMetricPctTab({
+      data: data,
+      sectionId: 'metric-gan_giao',
+      kpi: data.kpis && data.kpis.ganGiao,
+      metrics: data.metrics && data.metrics.ganGiao,
+      defaultTarget: 95,
+      subtitle: 'Tỷ lệ đơn được gán shipper / Volume · ngày ',
+      tbodyId: 'gan-prov-tbody',
+      valueField: 'gan',
+      chartId: 'chart_gan_giao',
+      chartLabel: '% Gán giao',
+    });
+  }
+
+  function updateMetricGtc(data) {
+    updateMetricPctTab({
+      data: data,
+      sectionId: 'metric-gtc',
+      kpi: data.kpis && data.kpis.gtc,
+      metrics: data.metrics && data.metrics.gtc,
+      defaultTarget: 80,
+      subtitle: 'Số đơn Giao Thành Công / Volume · ngày ',
+      tbodyId: 'gtc-prov-tbody',
+      valueField: 'gtc',
+      chartId: 'chart_gtc',
+      chartLabel: '% GTC',
+    });
+  }
+
+  function updateMetricOdr(data) {
+    updateMetricPctTab({
+      data: data,
+      sectionId: 'metric-odr',
+      kpi: data.kpis && data.kpis.odr,
+      metrics: data.metrics && data.metrics.odr,
+      defaultTarget: 95,
+      subtitle: 'ODR TTS — Giao đúng hạn · ngày ',
+      tbodyId: 'odr-prov-tbody',
+      valueField: 'odr',
+      chartId: 'chart_odr',
+      chartLabel: 'ODR TTS',
+    });
+  }
+
+  function updateMetricFd(data) {
+    const sec = document.getElementById('metric-fd');
+    if (!sec || !data.kpis) return;
+    const k = data.kpis.fd;
+    const m = data.metrics && data.metrics.fd;
+    const target = k.target || 5;
+
+    const big = sec.querySelector('.big-card');
+    if (big) {
+      const valEl = big.querySelector('.big-value');
+      const subEl = big.querySelector('.big-sub');
+      const tgtEl = big.querySelector('.big-target');
+      if (valEl) valEl.textContent = (k.value !== null && k.value !== undefined) ? fmtPct(k.value) : '—';
+      if (subEl) subEl.textContent = 'Tỷ lệ %Return trung bình các BC ngày ' + metricAnchor_(data, m);
+      if (tgtEl) {
+        const gap = (k.value !== null && k.value !== undefined) ? (k.value - target) : null;
+        if (gap !== null && gap <= 0) {
+          tgtEl.textContent = '▲ ' + Math.abs(gap).toFixed(1) + ' điểm so với mục tiêu ' + target + '%';
+          tgtEl.className = 'big-target good';
+        } else if (gap !== null) {
+          tgtEl.textContent = '▼ ' + gap.toFixed(1) + ' điểm so với mục tiêu ' + target + '%';
+          tgtEl.className = 'big-target ' + (gap <= 3 ? 'warn' : 'bad');
+        } else {
+          tgtEl.textContent = 'Mục tiêu ' + target + '%';
+          tgtEl.className = 'big-target';
+        }
+      }
+      big.className = 'big-card big-' + (k.status || 'neutral');
+    }
+
+    if (m && m.provinces) {
+      const tbody = document.getElementById('fd-prov-tbody') || sec.querySelector('.metric-grid table tbody');
+      if (tbody) {
+        tbody.innerHTML = m.provinces.map(function (p) {
+          return '<tr><td class="province-name">' + p.name + '</td>'
+            + '<td class="num">' + fmtNum(p.vol) + '</td>'
+            + '<td class="num">' + pillHtml(p.fd, target, false) + '</td></tr>';
+        }).join('');
+      }
+    }
+
+    if (m && m.trend7d && m.trend7d.length) {
+      updateChart('chart_fd', {
+        labels: m.trend7d.map(function (d) { return d.label; }),
+        datasets: [
+          {
+            label: 'FD — %Return',
+            data: m.trend7d.map(function (d) { return d.value; }),
+            borderColor: '#EF4444',
+            backgroundColor: 'rgba(239,68,68,0.1)',
+            borderWidth: 3,
+            fill: true,
+            tension: 0.3,
+            pointRadius: 5,
+            pointBackgroundColor: '#EF4444',
+          },
+          {
+            label: 'Mục tiêu ' + target + '%',
+            data: m.trend7d.map(function () { return target; }),
+            borderColor: '#94A3B8',
+            borderDash: [5, 5],
+            borderWidth: 2,
+            pointRadius: 0,
+            fill: false,
+          },
+        ],
+        y_label: '%',
+      });
+    }
+  }
+
+  function updateMetricRotLc(data) {
+    const sec = document.getElementById('metric-rot_lc');
+    if (!sec || !data.kpis) return;
+    const k = data.kpis.rotLC;
+    const m = data.metrics && data.metrics.rotLc;
+
+    const big = sec.querySelector('.big-card');
+    if (big) {
+      const valEl = big.querySelector('.big-value');
+      const subEl = big.querySelector('.big-sub');
+      if (valEl) valEl.textContent = (k.value !== null && k.value !== undefined) ? fmtNum(k.value) : '—';
+      if (subEl) subEl.textContent = 'Số đơn không lấy được trong ngày ' + metricAnchor_(data, m) + ' (Volume − vol_ltc)';
+      big.className = 'big-card big-' + (k.status || 'neutral');
+    }
+
+    if (m && m.provinces) {
+      const tbody = document.getElementById('rot-lc-prov-tbody') || sec.querySelector('.metric-grid table tbody');
+      if (tbody) {
+        tbody.innerHTML = m.provinces.map(function (p) {
+          return '<tr><td class="province-name">' + p.name + '</td>'
+            + '<td class="num">' + fmtNum(p.vol) + '</td>'
+            + '<td class="num">' + rotPillHtml(p.rot) + '</td></tr>';
+        }).join('');
+      }
+    }
+
+    if (m && m.trend7d && m.trend7d.length) {
+      updateChart('chart_rot_lc', {
+        labels: m.trend7d.map(function (d) { return d.label; }),
+        datasets: [
+          {
+            label: 'Rớt LC — Đơn lấy không thành công',
+            data: m.trend7d.map(function (d) { return d.value; }),
+            borderColor: '#F59E0B',
+            backgroundColor: 'rgba(245,158,11,0.1)',
+            borderWidth: 3,
+            fill: true,
+            tension: 0.3,
+            pointRadius: 5,
+            pointBackgroundColor: '#F59E0B',
+          },
+        ],
+        y_label: 'đơn',
+      });
+    }
+  }
+
   function updateMetricOpr(data) {
     const sec = document.getElementById('metric-opr');
     if (!sec || !data.kpis) return;
@@ -344,7 +593,7 @@
       const subEl = big.querySelector('.big-sub');
       const tgtEl = big.querySelector('.big-target');
       if (valEl) valEl.textContent = (k.value !== null && k.value !== undefined) ? fmtPct(k.value) : '—';
-      if (subEl) subEl.textContent = 'OPR TTS — Lấy đúng hạn · ngày ' + (data.anchorDate || '');
+      if (subEl) subEl.textContent = 'OPR TTS — Lấy đúng hạn · ngày ' + metricAnchor_(data, m);
       if (tgtEl) {
         const gap = (k.value !== null && k.value !== undefined) ? (target - k.value) : null;
         if (gap !== null && gap <= 0) {
@@ -423,7 +672,12 @@
 
     updateProvinces(data.provinces);
     updateAlerts(data.alerts);
+    updateMetricGanGiao(data);
+    updateMetricGtc(data);
+    updateMetricOdr(data);
     updateMetricOpr(data);
+    updateMetricFd(data);
+    updateMetricRotLc(data);
 
     window.__liveData__ = data;
   }
