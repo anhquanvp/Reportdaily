@@ -107,26 +107,35 @@
     localStorage.setItem(STORAGE_KEY, JSON.stringify(cfg));
   }
 
-  /** Gọi GAS Web App từ GitHub Pages — dùng JSONP (fetch bị CORS chặn). */
-  function gasApi(cfg, params, timeoutMs) {
-    return new Promise(function (resolve, reject) {
-      const base = String(cfg.GAS_URL || '').replace(/\/$/, '');
-      if (!base) {
-        reject(new Error('Chưa cấu hình GAS URL'));
-        return;
-      }
+  function buildGasUrl(cfg, params, extra) {
+    const base = String(cfg.GAS_URL || '').replace(/\/$/, '');
+    if (!base) throw new Error('Chưa cấu hình GAS URL');
+    const all = Object.assign({}, params, extra || {});
+    const qs = Object.keys(all).map(function (k) {
+      return encodeURIComponent(k) + '=' + encodeURIComponent(String(all[k]));
+    }).join('&');
+    return base + (base.indexOf('?') >= 0 ? '&' : '?') + qs;
+  }
 
-      const cbName = 'tntGasCb_' + Date.now() + '_' + Math.floor(Math.random() * 1e6);
-      const qs = Object.keys(params).map(function (k) {
-        return encodeURIComponent(k) + '=' + encodeURIComponent(String(params[k]));
-      }).join('&');
-      const url = base + (base.indexOf('?') >= 0 ? '&' : '?') + qs + '&callback=' + cbName;
+  function isFetchNetworkError(err) {
+    if (!err) return false;
+    const msg = String(err.message || err);
+    return err.name === 'TypeError' || msg.indexOf('Failed to fetch') >= 0
+      || msg.indexOf('NetworkError') >= 0 || msg.indexOf('Load failed') >= 0;
+  }
+
+  /** JSONP — gọi GAS từ GitHub Pages (fetch thường bị CORS). */
+  function gasJsonp(cfg, params, timeoutMs) {
+    return new Promise(function (resolve, reject) {
+      const cbName = 'tntGasCb_' + Date.now();
       let script = null;
+      const url = buildGasUrl(cfg, params, { callback: cbName });
+      const limit = timeoutMs || 300000;
 
       const timer = setTimeout(function () {
         cleanup();
-        reject(new Error('API timeout — sheet lớn hoặc GAS chậm, thử lại'));
-      }, timeoutMs || 120000);
+        reject(new Error('API timeout — sheet lớn, đợi 1–3 phút rồi bấm Làm mới lại'));
+      }, limit);
 
       function cleanup() {
         clearTimeout(timer);
@@ -140,13 +149,47 @@
       };
 
       script = document.createElement('script');
+      script.charset = 'UTF-8';
       script.src = url;
       script.onerror = function () {
         cleanup();
-        reject(new Error('Failed to fetch — kiểm tra GAS URL và deploy Web App'));
+        reject(new Error('Failed to fetch — kiểm tra GAS URL và deploy Web App (Anyone)'));
       };
       document.head.appendChild(script);
     });
+  }
+
+  async function gasFetch(cfg, params, timeoutMs) {
+    const url = buildGasUrl(cfg, params);
+    const limit = timeoutMs || 120000;
+    const ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
+    const timer = ctrl ? setTimeout(function () { ctrl.abort(); }, limit) : null;
+    try {
+      const res = await fetch(url, { method: 'GET', redirect: 'follow', credentials: 'omit', signal: ctrl ? ctrl.signal : undefined });
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      return await res.json();
+    } catch (err) {
+      if (err && err.name === 'AbortError') {
+        throw new Error('API timeout — sheet lớn, đợi 1–3 phút rồi bấm Làm mới lại');
+      }
+      throw err;
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
+  }
+
+  async function gasRequest(cfg, params, opts) {
+    const timeoutMs = (opts && opts.timeout) || 120000;
+    try {
+      return await gasFetch(cfg, params, timeoutMs);
+    } catch (fetchErr) {
+      if (!isFetchNetworkError(fetchErr)) throw fetchErr;
+      return gasJsonp(cfg, params, Math.max(timeoutMs, 300000));
+    }
+  }
+
+  function gasApi(cfg, params, timeoutMs) {
+    return gasRequest(cfg, params, { timeout: timeoutMs || 300000 });
   }
 
   function fmtNum(n) {
@@ -432,7 +475,7 @@
   }
 
   async function verifyToken(cfg, token) {
-    return gasApi(cfg, { action: 'verify', auth_token: token });
+    return gasRequest(cfg, { action: 'verify', auth_token: token }, { timeout: 30000 });
   }
 
   function saveAuthGasUrl() {
@@ -539,11 +582,11 @@
   }
 
   async function fetchDashboard(cfg) {
-    const json = await gasApi(cfg, {
+    const json = await gasRequest(cfg, {
       action: 'daily_dashboard',
       auth_token: getAuthToken(),
       _: Date.now(),
-    });
+    }, { timeout: 300000 });
     if (!json.ok) {
       if (json.auth === false) {
         clearSession();
@@ -565,7 +608,7 @@
 
     const btn = document.getElementById('btn-refresh');
     if (btn) { btn.disabled = true; btn.textContent = '⏳ Đang tải...'; }
-    setStatus('⏳ Đang đọc dữ liệu từ sheet...', '');
+    setStatus('⏳ Đang đọc sheet (1–3 phút nếu lần đầu)...', '');
 
     try {
       const data = await fetchDashboard(cfg);
