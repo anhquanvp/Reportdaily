@@ -1676,7 +1676,7 @@
         <div class="big-card big-warn">
           <div class="big-label">Toàn vùng TNT</div>
           <div class="big-value">8.4%</div>
-          <div class="big-sub">Tỷ lệ %Return trung bình các BC ngày 2026-06-07</div>
+          <div class="big-sub">Tỷ lệ %Return trung bình các BC — đang tải...</div>
           <div class="big-target good">▲ 3.4 điểm so với mục tiêu 5%</div>
         </div>
         <div class="card">
@@ -1917,7 +1917,7 @@
         <div class="big-card big-neutral">
           <div class="big-label">Toàn vùng TNT</div>
           <div class="big-value">7.382</div>
-          <div class="big-sub">Số đơn không lấy được trong ngày 2026-06-07 (Volume − vol_ltc)</div>
+          <div class="big-sub">Số đơn không lấy được — đang tải...</div>
           
         </div>
         <div class="card">
@@ -2371,7 +2371,7 @@ window.TNT_CONFIG = window.TNT_CONFIG || {
   GOOGLE_CLIENT_ID: '96848780552-cg9msgiqmtuan9ri9ov5ftvf2jp2om3m.apps.googleusercontent.com'
 };
 </script>
-<script src="report-live.js"></script>
+<script src="report-live.js?v=20260611b"></script>
 <script>
 /* Phát hiện report-live.js không tải được (sai tên file trên GitHub) */
 document.addEventListener('DOMContentLoaded', function () {
@@ -2402,20 +2402,7 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
   btn.addEventListener('click', () => switchTab(btn.dataset.target));
 });
 
-Object.entries(window.__chart_data__ || {}).forEach(([id, cfg]) => {
-  const el = document.getElementById(id);
-  if (!el) return;
-  const isBar = (cfg.type === 'bar');
-  new Chart(el, {
-    type: cfg.type || 'line',
-    data: { labels: cfg.labels, datasets: cfg.datasets },
-    options: {
-      responsive: true, maintainAspectRatio: false,
-      plugins: { legend: { position: 'bottom', display: !isBar } },
-      scales: { y: { beginAtZero: isBar, title: { display: true, text: cfg.y_label } } }
-    }
-  });
-});
+/* Biểu đồ được vẽ sau khi Làm mới dữ liệu (report-live.js updateChart) */
 </script>
 
 </body>
